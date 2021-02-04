@@ -1,4 +1,4 @@
-#rcresolver
+# rcresolver
 
 * Infomations:
     * Faça download do arquivo zip e o instale no kodi normalmente ou o adicione ao
