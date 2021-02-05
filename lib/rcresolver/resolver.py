@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 #
+import re
 import json
 import requests
 from bs4 import BeautifulSoup
 
-URL_SERVER = 'https://redecanais.cloud'
+URL_SERVER_FILMS = 'https://redecanais.cloud'
+URL_SERVER_TV = 'https://redecanaistv.com/'
 
 
 class ProxyRequests:
@@ -32,6 +34,7 @@ class Browser:
         self.response = None
         self.proxies = None
         self.referer = None
+        self.url_server = None
         self.session = requests.Session()
 
     def headers(self):
@@ -79,6 +82,7 @@ class Resolver(Browser):
 
     def __init__(self):
         super().__init__()
+        self.is_tv = False
         self.headers = self.headers()
 
     def create_json(self, data, filename=None):
@@ -100,11 +104,11 @@ class Resolver(Browser):
             for info in films:
                 result = info.find_all('a')[1]
                 if 'https' not in result.img['data-echo']:
-                    img = URL_SERVER + result.img['data-echo']
+                    img = URL_SERVER_FILMS + result.img['data-echo']
                 else:
                     img = result.img['data-echo']
-                result_dict = self.find_streams(URL_SERVER + result['href'])
-                dict_films = {'title': result.img['alt'], 'url': URL_SERVER + result['href'], 'img': img, 'description': result_dict['desc'], 'player': result_dict['player'], 'stream': result_dict['stream']}
+                result_dict = self.find_streams(URL_SERVER_FILMS + result['href'])
+                dict_films = {'title': result.img['alt'], 'url': URL_SERVER_FILMS + result['href'], 'img': img, 'description': result_dict['desc'], 'player': result_dict['player'], 'stream': result_dict['stream']}
                 films_list.append(dict_films)
             return films_list
         except ValueError:
@@ -112,7 +116,11 @@ class Resolver(Browser):
             return films_list.append(dict_films)
 
     def find_streams(self, url):
-        self.headers['referer'] = URL_SERVER
+        self.url_server = URL_SERVER_FILMS
+        if 'tv' in url:
+            self.is_tv = True
+            self.url_server = URL_SERVER_TV
+        self.headers['referer'] = self.url_server
         html = self.send_request('GET', url, headers=self.headers)
         soup = BeautifulSoup(html, 'html.parser')
         player, stream = self.get_player_id(soup)
@@ -140,7 +148,7 @@ class Resolver(Browser):
         return player, stream
 
     def get_player(self, url):
-        url_player = URL_SERVER + url
+        url_player = self.url_server + url
         self.response = self.send_request('GET', url_player, headers=self.headers)
         if self.response:
             form = BeautifulSoup(self.response, 'html.parser').find('form')
@@ -188,5 +196,6 @@ class Resolver(Browser):
         self.response = self.send_request('GET', url, headers=self.headers)
         if self.response:
             soup = BeautifulSoup(self.response, 'html.parser')
-            url_stream = soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').split('?')[0]
-            return url_stream
+            if self.is_tv:
+                return re.compile(r'source: "(.*?)",').findall(self.response)[0]
+            return soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').split('?')[0]
