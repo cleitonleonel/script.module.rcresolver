@@ -5,6 +5,7 @@ import json
 import requests
 from bs4 import BeautifulSoup
 
+
 URL_SERVER_FILMS = 'https://redecanais.cloud'
 URL_SERVER_TV = 'https://redecanaistv.com/'
 
