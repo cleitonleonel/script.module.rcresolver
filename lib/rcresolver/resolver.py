@@ -17,7 +17,10 @@ class ProxyRequests:
         self.proxies = self.mount_proxies()
 
     def acquire_sockets(self):
-        response = requests.get('https://api.proxyscrape.com/?request=displayproxies&proxytype=http&timeout=7000&country=BR&anonymity=elite&ssl=yes').text
+        response = requests.get(
+            'https://api.proxyscrape.com/?request=displayproxies&proxytype='
+            'http&timeout=7000&country=BR&anonymity=elite&ssl=yes'
+        ).text
         self.sockets = response.split('\n')
 
     def mount_proxies(self):
@@ -199,4 +202,14 @@ class Resolver(Browser):
             soup = BeautifulSoup(self.response, 'html.parser')
             if self.is_tv:
                 return re.compile(r'source: "(.*?)",').findall(self.response)[0]
+            download_url = self.get_url_download_video(soup.find('div', {'id': 'instructions'}).video['baixar'])
+            if download_url:
+                return download_url
             return soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').split('?')[0]
+
+    def get_url_download_video(self, url):
+        self.response = self.send_request('GET', url, headers=self.headers)
+        link_download = None
+        if self.response:
+            link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response)[0].replace("'", "")
+        return link_download
