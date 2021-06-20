@@ -87,6 +87,7 @@ class Resolver(Browser):
     def __init__(self):
         super().__init__()
         self.is_tv = False
+        self.stream_ref = None
         self.headers = self.headers()
 
     def create_json(self, data, filename=None):
@@ -132,14 +133,14 @@ class Resolver(Browser):
             tags = soup.find('div', {'id': 'content-main'})
             films = tags.find_all('div', {'itemprop': 'description'})
             if not films:
-                result = {'desc': 'Conteúdo sem descrição!!!', 'player': player, 'stream': stream}
+                result = {'desc': 'Conteúdo sem descrição!!!', 'player': player, 'stream': stream, 'referer': self.stream_ref}
                 return result
             else:
                 for info in films:
-                    result = {'desc': info.text.replace('\n', ''), 'player': player, 'stream': stream}
+                    result = {'desc': info.text.replace('\n', ''), 'player': player, 'stream': stream, 'referer': self.stream_ref}
                     return result
         except ValueError:
-            result = {'desc': None, 'player': None, 'stream': None}
+            result = {'desc': None, 'player': None, 'stream': None, 'referer': self.stream_ref}
             return result
 
     def get_player_id(self, iframe):
@@ -197,6 +198,7 @@ class Resolver(Browser):
 
     def get_stream(self, url, referer):
         self.headers["referer"] = referer
+        self.stream_ref = referer
         self.response = self.send_request('GET', url, headers=self.headers)
         if self.response:
             soup = BeautifulSoup(self.response, 'html.parser')
