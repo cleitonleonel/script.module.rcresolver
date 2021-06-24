@@ -12,8 +12,7 @@
     <import addon="script.module.certifi" version="2017.07.27.1"/>
     <import addon="script.module.html5lib" version="0.999.0"/>
   </requires>
-  <extension point="xbmc.python.module"
-             library="lib/" />
+  <extension point="xbmc.python.module" library="lib" />
   <extension point="xbmc.addon.metadata">
     <summary lang="pt_BR">Python Resolver links stream</summary>
     <description lang="pt_BR">Extrair e resolver links do site redecanais...</description>
