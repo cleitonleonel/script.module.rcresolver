@@ -22,7 +22,7 @@
     <license>Apache2</license>
     <forum></forum>
     <website>http://semsite.com</website>
-    <source>https://github.com/cleitonleonel/script.module.rcresolver/archive/master.zip</source>
+    <source>https://github.com/cleitonleonel/script.module.rcresolver</source>
     <email>cleiton.leonel@gmail.com</email>
     <assets>
       <icon>resources/icon.png</icon>
