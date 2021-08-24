@@ -1,13 +1,7 @@
 # rcresolver
 
-* Infomations:
-    * Faça download do arquivo zip e o instale no kodi normalmente ou o adicione ao
-    seu add-on como uma dependência:
-    ```xml
-      <requires>
-          <import addon="script.module.rcresolver" version="1.0.0"/>
-      </requires>
-    ```  
+* Information:
+    * Faça download do arquivo zip e o instale no kodi normalmente.
 
 * Obs:
     * Apenas kodi rodando python3, também vale lembrar que

@@ -4,13 +4,62 @@ import re
 import json
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import parse_qsl
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 
-
-URL_SERVER_FILMS = 'https://redecanais.cloud'
+URL_SERVER_FILMS = 'https://redecanais.re'
 URL_SERVER_TV = 'https://redecanaistv.com/'
 
 
-class ProxyRequests:
+def app(environ, start_response):
+    browser = Browser()
+    result = None
+    if environ['REQUEST_METHOD'] == 'GET':
+        query = environ["QUERY_STRING"]
+        if 'url' not in query:
+            headers = [('Content-Type', 'text/plain')]
+            start_response('404 Not Found!', headers)
+            return ['Página não encontrada!'.encode()]
+        url = dict(parse_qsl(query))['url']
+        with requests.Session() as session:
+            retries = Retry(total=5, backoff_factor=1, status_forcelist=[502, 503, 504])
+            if 'https://' in url:
+                session.mount('https://', HTTPAdapter(max_retries=retries))
+            else:
+                session.mount('http://', HTTPAdapter(max_retries=retries))
+            response = session.get(url, headers=browser.headers(), timeout=0.5)
+        if response:
+            result = response.content[8:]
+        headers = [('Content-Type', 'video/mp2t'),
+                   ('User-Agent', browser.headers()['User-Agent'])]
+        start_response('200 OK', headers)
+        return [result]
+
+
+class LocalHttpProxy(object):
+
+    def __init__(self):
+        self.host = None
+        self.port = None
+        self.server_class = WSGIServer
+        self.handler_class = WSGIRequestHandler
+
+    def set_config(self, host, port):
+        self.host = host
+        self.port = port
+
+    def runserver(self):
+        http_server = self.server_class((self.host, self.port), self.handler_class)
+        http_server.set_app(app)
+        if http_server:
+            print(f"Serving on port http://{self.host}:{self.port} ...")
+        return http_server.serve_forever()
+
+
+class ProxyRequests(object):
+
     def __init__(self):
         self.sockets = []
         self.acquire_sockets()
@@ -31,7 +80,7 @@ class ProxyRequests:
         return proxies
 
 
-class Browser:
+class Browser(object):
 
     def __init__(self):
         self.request = None
@@ -52,7 +101,6 @@ class Browser:
             payload = data
             self.response = s.post(url=url, data=payload, proxies=proxies)
             if self.response.status_code == 200:
-                print(proxies)
                 self.proxies = proxies
                 return True
 
@@ -78,7 +126,6 @@ class Browser:
         if response.status_code == 200:
             self.referer = url
             return response.text
-
         return None
 
 
@@ -88,6 +135,11 @@ class Resolver(Browser):
         super().__init__()
         self.is_tv = False
         self.stream_ref = None
+        self.player_url = None
+        self.base_player = None
+        self.download_url = None
+        self.link_download = None
+        self.source_url = None
         self.headers = self.headers()
 
     def create_json(self, data, filename=None):
@@ -113,7 +165,16 @@ class Resolver(Browser):
                 else:
                     img = result.img['data-echo']
                 result_dict = self.find_streams(URL_SERVER_FILMS + result['href'])
-                dict_films = {'title': result.img['alt'], 'url': URL_SERVER_FILMS + result['href'], 'img': img, 'description': result_dict['desc'], 'player': result_dict['player'], 'stream': result_dict['stream']}
+                dict_films = {
+                    'title': result.img['alt'],
+                    'url': URL_SERVER_FILMS + result['href'],
+                    'img': img,
+                    'description': result_dict['description'],
+                    'download_link': self.link_download,
+                    'player': result_dict['player'],
+                    'stream': result_dict['stream'],
+                    'referer': self.stream_ref
+                }
                 films_list.append(dict_films)
             return films_list
         except ValueError:
@@ -128,38 +189,58 @@ class Resolver(Browser):
         self.headers['referer'] = self.url_server
         html = self.send_request('GET', url, headers=self.headers)
         soup = BeautifulSoup(html, 'html.parser')
-        player, stream = self.get_player_id(soup)
+        self.get_player_id(soup)
         try:
             tags = soup.find('div', {'id': 'content-main'})
             films = tags.find_all('div', {'itemprop': 'description'})
             if not films:
-                result = {'desc': 'Conteúdo sem descrição!!!', 'player': player, 'stream': stream, 'referer': self.stream_ref}
+                result = {
+                    'description': 'Conteúdo sem descrição!!!',
+                    'player': self.player_url,
+                    'download_link': self.link_download,
+                    'download': self.download_url,
+                    'source': self.source_url,
+                    'referer': self.stream_ref
+                }
                 return result
             else:
                 for info in films:
-                    result = {'desc': info.text.replace('\n', ''), 'player': player, 'stream': stream, 'referer': self.stream_ref}
+                    result = {
+                        'description': info.text.replace('\n', ''),
+                        'player': self.player_url,
+                        'download_link': self.link_download,
+                        'download': self.download_url,
+                        'source': self.source_url,
+                        'referer': self.stream_ref
+                    }
                     return result
         except ValueError:
-            result = {'desc': None, 'player': None, 'stream': None, 'referer': self.stream_ref}
+            result = {
+                'description': None,
+                'player': self.player_url,
+                'download_link': self.link_download,
+                'download': self.download_url,
+                'source': self.source_url,
+                'referer': self.stream_ref
+            }
             return result
 
     def get_player_id(self, iframe):
         try:
-            url_player = iframe.find('div', {'id': 'video-wrapper'}).iframe['src']
-            player, stream = self.get_player(url_player)
+            url_player_before = iframe.find('div', {'id': 'video-wrapper'}).iframe['src']
+            self.player_url = self.url_server + url_player_before
+            self.get_player()
         except ValueError:
-            player = None
-            stream = None
-        return player, stream
+            return None
 
-    def get_player(self, url):
-        url_player = self.url_server + url
-        self.response = self.send_request('GET', url_player, headers=self.headers)
+    def get_player(self):
+        self.response = self.send_request('GET', self.player_url, headers=self.headers)
         if self.response:
             form = BeautifulSoup(self.response, 'html.parser').find('form')
             url_action = form['action']
             value = form.input['value']
-            return url_player, self.decrypt_link(url_action, value)
+            self.base_player = value.replace('&=', '')
+            self.decrypt_link(url_action, value)
 
     def decrypt_link(self, url, value):
         self.headers["referer"] = self.referer
@@ -171,7 +252,7 @@ class Resolver(Browser):
             form = BeautifulSoup(self.response, 'html.parser').find('form')
             url_action = form['action']
             value = form.input['value']
-            return self.redirect_link(url_action, value)
+            self.redirect_link(url_action, value)
 
     def redirect_link(self, url, value):
         self.headers["referer"] = self.referer
@@ -183,7 +264,7 @@ class Resolver(Browser):
             form = BeautifulSoup(self.response, 'html.parser').find('form')
             url_action = form['action']
             value = form.input['value']
-            return self.get_ads_link(url_action, value)
+            self.get_ads_link(url_action, value)
 
     def get_ads_link(self, url, value):
         self.headers["referer"] = self.referer
@@ -194,24 +275,31 @@ class Resolver(Browser):
         if self.response:
             iframe = BeautifulSoup(self.response, 'html.parser').find('iframe')
             url_action = iframe['src']
-            return self.get_stream(url + url_action.replace('./', '/'), url)
+            self.get_stream(url + url_action.replace('./', '/'), url)
 
     def get_stream(self, url, referer):
         self.headers["referer"] = referer
-        self.stream_ref = referer
+        self.stream_ref = referer + self.base_player
         self.response = self.send_request('GET', url, headers=self.headers)
         if self.response:
             soup = BeautifulSoup(self.response, 'html.parser')
             if self.is_tv:
-                return re.compile(r'source: "(.*?)",').findall(self.response)[0]
-            download_url = self.get_url_download_video(soup.find('div', {'id': 'instructions'}).video['baixar'])
-            if download_url:
-                return download_url
-            return soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').split('?')[0]
+                return soup.source['src']
+                # return re.compile(r'source: "(.*?)",').findall(self.response)[0]
+            try:
+                self.source_url = soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '')
+                self.download_url = soup.find('div', {'id': 'instructions'}).video['baixar']
+                if self.download_url:
+                    self.get_url_download_video()
+            except:
+                self.source_url = None
+                self.download_url = None
 
-    def get_url_download_video(self, url):
-        self.response = self.send_request('GET', url, headers=self.headers)
-        link_download = None
-        if self.response:
-            link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response)[0].replace("'", "")
-        return link_download
+    def get_url_download_video(self):
+        try:
+            self.response = self.send_request('GET', self.download_url, headers=self.headers)
+            if self.response:
+                self.link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response)[0].replace("'", "")
+            return self.link_download
+        except:
+            self.link_download = None
