@@ -12,16 +12,17 @@ result_dict_film = rcresolver.resolve(
 
 print(json.dumps(result_dict_film, indent=4))
 
-# result_dict_tv = rcresolver.resolve(
-# 'https://redecanaistv.com/assistir-premiere-2-online-24-horas-ao-vivo-1_9f269bd30.html'
-# )
+#result_dict_tv = rcresolver.resolve(
+#'https://redecanaistv.net/assistir-premiere-2-online-24-horas-ao-vivo-1_9f269bd30.html'
+#)
 
+#print(json.dumps(result_dict_tv, indent=4))
 # Usage
 
-description = result_dict_film['description']
-player_url = result_dict_film['player']
-video_url = result_dict_film['download']
-player_referer = result_dict_film['referer']
+#description = result_dict_film['description']
+#player_url = result_dict_film['player']
+#video_url = result_dict_film['download']
+#player_referer = result_dict_film['referer']
 
 # print('\nSTREAM FILME: ', video_url)
 # print('\nURL_PLAYER: ', player_url)

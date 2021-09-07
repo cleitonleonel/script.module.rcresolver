@@ -4,13 +4,13 @@ import re
 import json
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, unquote, urlparse
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 
 URL_SERVER_FILMS = 'https://redecanais.re'
-URL_SERVER_TV = 'https://redecanaistv.com/'
+URL_SERVER_TV = 'https://redecanaistv.net/'
 
 
 def app(environ, start_response):
@@ -97,9 +97,9 @@ class Browser(object):
         return headers
 
     def verify_proxy(self, url, proxies, data):
-        with self.session as s:
+        with self.session as session:
             payload = data
-            self.response = s.post(url=url, data=payload, proxies=proxies)
+            self.response = session.post(url=url, data=payload, proxies=proxies)
             if self.response.status_code == 200:
                 self.proxies = proxies
                 return True
@@ -125,7 +125,7 @@ class Browser(object):
         response = self.session.request(method, url, proxies=self.proxies, **kwargs)
         if response.status_code == 200:
             self.referer = url
-            return response.text
+            return response
         return None
 
 
@@ -153,7 +153,7 @@ class Resolver(Browser):
 
     def films(self, url):
         html = self.send_request('GET', url)
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html.text, 'html.parser')
         tags = soup.find('ul', {'class': 'row pm-ul-browse-videos list-unstyled'})
         films_list = []
         try:
@@ -188,7 +188,7 @@ class Resolver(Browser):
             self.url_server = URL_SERVER_TV
         self.headers['referer'] = self.url_server
         html = self.send_request('GET', url, headers=self.headers)
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(html.text, 'html.parser')
         self.get_player_id(soup)
         try:
             tags = soup.find('div', {'id': 'content-main'})
@@ -236,7 +236,7 @@ class Resolver(Browser):
     def get_player(self):
         self.response = self.send_request('GET', self.player_url, headers=self.headers)
         if self.response:
-            form = BeautifulSoup(self.response, 'html.parser').find('form')
+            form = BeautifulSoup(self.response.text, 'html.parser').find('form')
             url_action = form['action']
             value = form.input['value']
             self.base_player = value.replace('&=', '')
@@ -249,7 +249,7 @@ class Resolver(Browser):
         }
         self.response = self.send_request('POST', url, data=payload, headers=self.headers)
         if self.response:
-            form = BeautifulSoup(self.response, 'html.parser').find('form')
+            form = BeautifulSoup(self.response.text, 'html.parser').find('form')
             url_action = form['action']
             value = form.input['value']
             self.redirect_link(url_action, value)
@@ -261,7 +261,7 @@ class Resolver(Browser):
         }
         self.response = self.send_request('POST', url, data=payload, headers=self.headers)
         if self.response:
-            form = BeautifulSoup(self.response, 'html.parser').find('form')
+            form = BeautifulSoup(self.response.text, 'html.parser').find('form')
             url_action = form['action']
             value = form.input['value']
             self.get_ads_link(url_action, value)
@@ -273,7 +273,7 @@ class Resolver(Browser):
         }
         self.response = self.send_request('POST', url, data=payload, headers=self.headers)
         if self.response:
-            iframe = BeautifulSoup(self.response, 'html.parser').find('iframe')
+            iframe = BeautifulSoup(self.response.text, 'html.parser').find('iframe')
             url_action = iframe['src']
             self.get_stream(url + url_action.replace('./', '/'), url)
 
@@ -282,12 +282,14 @@ class Resolver(Browser):
         self.stream_ref = referer + self.base_player
         self.response = self.send_request('GET', url, headers=self.headers)
         if self.response:
-            soup = BeautifulSoup(self.response, 'html.parser')
+            soup = BeautifulSoup(self.response.text, 'html.parser')
             if self.is_tv:
-                return soup.source['src']
+                self.source_url = soup.source['src']
+                return self.source_url
                 # return re.compile(r'source: "(.*?)",').findall(self.response)[0]
             try:
-                self.source_url = soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '')
+                source = soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').replace('./', '/')
+                self.source_url = f"{'/'.join(self.referer.split('/')[:-5])}{source}"
                 self.download_url = soup.find('div', {'id': 'instructions'}).video['baixar']
                 if self.download_url:
                     self.get_url_download_video()
@@ -299,7 +301,18 @@ class Resolver(Browser):
         try:
             self.response = self.send_request('GET', self.download_url, headers=self.headers)
             if self.response:
-                self.link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response)[0].replace("'", "")
+                self.link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response.text)[0].replace("'",
+                                                                                                                    "")
             return self.link_download
         except:
             self.link_download = None
+
+    def generate_playlist_m3u(self, path_m3u):
+        response = self.send_request('GET', self.source_url, headers=self.headers)
+        file_path = None
+        if response:
+            url = response.text.replace('https://', 'http://127.0.0.1:3333/?url=https://').replace('.png', '.png&')
+            file_path = path_m3u.replace('\\', '/') + 'redecanais_vip_playlist.m3u8'
+            with open(file_path, "w", encoding="utf-8") as file_m3u:
+                file_m3u.write(url)
+        return file_path
