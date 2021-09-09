@@ -133,6 +133,7 @@ class Resolver(Browser):
 
     def __init__(self):
         super().__init__()
+        self.default_url = None
         self.is_tv = False
         self.stream_ref = None
         self.player_url = None
@@ -140,6 +141,8 @@ class Resolver(Browser):
         self.download_url = None
         self.link_download = None
         self.source_url = None
+        self.url_action = None
+        self.value = None
         self.headers = self.headers()
 
     def create_json(self, data, filename=None):
@@ -182,12 +185,13 @@ class Resolver(Browser):
             return films_list.append(dict_films)
 
     def find_streams(self, url):
+        self.default_url = url
         self.url_server = URL_SERVER_FILMS
-        if 'tv' in url:
+        if 'tv' in self.default_url:
             self.is_tv = True
             self.url_server = URL_SERVER_TV
         self.headers['referer'] = self.url_server
-        html = self.send_request('GET', url, headers=self.headers)
+        html = self.send_request('GET', self.default_url, headers=self.headers)
         soup = BeautifulSoup(html.text, 'html.parser')
         self.get_player_id(soup)
         try:
@@ -237,45 +241,49 @@ class Resolver(Browser):
         self.response = self.send_request('GET', self.player_url, headers=self.headers)
         if self.response:
             form = BeautifulSoup(self.response.text, 'html.parser').find('form')
-            url_action = form['action']
-            value = form.input['value']
-            self.base_player = value.replace('&=', '')
-            self.decrypt_link(url_action, value)
+            self.url_action = form['action']
+            self.value = form.input['value']
+            self.base_player = self.value.replace('&=', '')
+            self.decrypt_link()
 
-    def decrypt_link(self, url, value):
+    def decrypt_link(self):
         self.headers["referer"] = self.referer
         payload = {
-            "data": value
+            "data": self.value
         }
-        self.response = self.send_request('POST', url, data=payload, headers=self.headers)
+        self.response = self.send_request('POST', self.url_action, data=payload, headers=self.headers)
         if self.response:
             form = BeautifulSoup(self.response.text, 'html.parser').find('form')
-            url_action = form['action']
-            value = form.input['value']
-            self.redirect_link(url_action, value)
+            self.url_action = form['action']
+            self.value = form.input['value']
+            self.redirect_link()
 
-    def redirect_link(self, url, value):
+    def redirect_link(self,):
         self.headers["referer"] = self.referer
         payload = {
-            "data": value
+            "data": self.value
         }
-        self.response = self.send_request('POST', url, data=payload, headers=self.headers)
+        self.response = self.send_request('POST', self.url_action, data=payload, headers=self.headers)
         if self.response:
             form = BeautifulSoup(self.response.text, 'html.parser').find('form')
-            url_action = form['action']
-            value = form.input['value']
-            self.get_ads_link(url_action, value)
+            self.url_action = form['action']
+            self.value = form.input['value']
+            self.get_ads_link()
 
-    def get_ads_link(self, url, value):
+    def get_ads_link(self):
         self.headers["referer"] = self.referer
         payload = {
-            "data": value
+            "data": self.value
         }
-        self.response = self.send_request('POST', url, data=payload, headers=self.headers)
+        self.response = self.send_request('POST', self.url_action, data=payload, headers=self.headers)
         if self.response:
             iframe = BeautifulSoup(self.response.text, 'html.parser').find('iframe')
-            url_action = iframe['src']
-            self.get_stream(url + url_action.replace('./', '/'), url)
+            try:
+                url_action = iframe['src']
+            except Exception as e:
+                print(e)
+                return self.find_streams(self.default_url)
+            self.get_stream(self.url_action + url_action.replace('./', '/'), self.url_action)
 
     def get_stream(self, url, referer):
         self.headers["referer"] = referer
