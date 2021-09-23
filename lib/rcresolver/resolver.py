@@ -9,7 +9,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 
-URL_SERVER_FILMS = 'https://redecanais.re'
+URL_SERVER_FILMS = 'https://redecanais.cloud'
 URL_SERVER_TV = 'https://redecanaistv.net/'
 
 
@@ -122,11 +122,8 @@ class Browser(object):
                     if result:
                         break
 
-        response = self.session.request(method, url, proxies=self.proxies, **kwargs)
-        if response.status_code == 200:
-            self.referer = url
-            return response
-        return None
+        self.referer = url
+        return self.session.request(method, url, proxies=self.proxies, **kwargs)
 
 
 class Resolver(Browser):
@@ -143,6 +140,7 @@ class Resolver(Browser):
         self.source_url = None
         self.url_action = None
         self.value = None
+        self.fields = None
         self.headers = self.headers()
 
     def create_json(self, data, filename=None):
@@ -239,12 +237,11 @@ class Resolver(Browser):
 
     def get_player(self):
         self.response = self.send_request('GET', self.player_url, headers=self.headers)
-        if self.response:
-            form = BeautifulSoup(self.response.text, 'html.parser').find('form')
-            self.url_action = form['action']
-            self.value = form.input['value']
-            self.base_player = self.value.replace('&=', '')
-            self.decrypt_link()
+        form = BeautifulSoup(self.response.text, 'html.parser').find('form')
+        self.url_action = form['action']
+        self.value = form.input['value']
+        self.base_player = self.value.replace('&=', '')
+        self.decrypt_link()
 
     def decrypt_link(self):
         self.headers["referer"] = self.referer
@@ -252,11 +249,10 @@ class Resolver(Browser):
             "data": self.value
         }
         self.response = self.send_request('POST', self.url_action, data=payload, headers=self.headers)
-        if self.response:
-            form = BeautifulSoup(self.response.text, 'html.parser').find('form')
-            self.url_action = form['action']
-            self.value = form.input['value']
-            self.redirect_link()
+        form = BeautifulSoup(self.response.text, 'html.parser').find('form')
+        self.url_action = form['action']
+        self.value = form.input['value']
+        self.redirect_link()
 
     def redirect_link(self,):
         self.headers["referer"] = self.referer
@@ -264,11 +260,10 @@ class Resolver(Browser):
             "data": self.value
         }
         self.response = self.send_request('POST', self.url_action, data=payload, headers=self.headers)
-        if self.response:
-            form = BeautifulSoup(self.response.text, 'html.parser').find('form')
-            self.url_action = form['action']
-            self.value = form.input['value']
-            self.get_ads_link()
+        form = BeautifulSoup(self.response.text, 'html.parser').find('form')
+        self.url_action = form['action']
+        self.value = form.input['value']
+        self.get_ads_link()
 
     def get_ads_link(self):
         self.headers["referer"] = self.referer
@@ -276,51 +271,47 @@ class Resolver(Browser):
             "data": self.value
         }
         self.response = self.send_request('POST', self.url_action, data=payload, headers=self.headers)
-        if self.response:
-            iframe = BeautifulSoup(self.response.text, 'html.parser').find('iframe')
-            try:
+        iframe = BeautifulSoup(self.response.text, 'html.parser').find('iframe')
+        url_action = None
+        try:
+            if "./" in iframe['src']:
+                url_action = self.url_action + iframe['src'].replace('./', '/')
+            else:
                 url_action = iframe['src']
-            except Exception as e:
-                print(e)
-                return self.find_streams(self.default_url)
-            self.get_stream(self.url_action + url_action.replace('./', '/'), self.url_action)
+        except Exception as e:
+            print(e)
+            exit(0)
+        self.get_stream(url_action, self.url_action)
 
     def get_stream(self, url, referer):
         self.headers["referer"] = referer
         self.stream_ref = referer + self.base_player
         self.response = self.send_request('GET', url, headers=self.headers)
-        if self.response:
-            soup = BeautifulSoup(self.response.text, 'html.parser')
-            if self.is_tv:
-                self.source_url = soup.source['src']
-                return self.source_url
-                # return re.compile(r'source: "(.*?)",').findall(self.response)[0]
-            try:
-                source = soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').replace('./', '/')
-                self.source_url = f"{'/'.join(self.referer.split('/')[:-5])}{source}"
-                self.download_url = soup.find('div', {'id': 'instructions'}).video['baixar']
-                if self.download_url:
-                    self.get_url_download_video()
-            except:
-                self.source_url = None
-                self.download_url = None
+        soup = BeautifulSoup(self.response.text, 'html.parser')
+        if self.is_tv:
+            self.source_url = soup.source['src']
+            return self.source_url
+        try:
+            self.source_url = soup.find('div', {'id': 'instructions'}).source['src'].replace('\n', '').replace('./', '/')
+            self.download_url = soup.find('div', {'id': 'instructions'}).video['baixar']
+            if self.download_url:
+                self.get_url_download_video()
+        except:
+            self.source_url = None
+            self.download_url = None
 
     def get_url_download_video(self):
         try:
             self.response = self.send_request('GET', self.download_url, headers=self.headers)
-            if self.response:
-                self.link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response.text)[0].replace("'",
-                                                                                                                    "")
+            self.link_download = re.compile(r'<meta .*?0; URL=(.*?)"/>').findall(self.response.text)[0].replace("'",                                                                                                     "")
             return self.link_download
         except:
             self.link_download = None
 
     def generate_playlist_m3u(self, path_m3u):
         response = self.send_request('GET', self.source_url, headers=self.headers)
-        file_path = None
-        if response:
-            url = response.text.replace('https://', 'http://127.0.0.1:3333/?url=https://').replace('.png', '.png&')
-            file_path = path_m3u.replace('\\', '/') + 'redecanais_vip_playlist.m3u8'
-            with open(file_path, "w", encoding="utf-8") as file_m3u:
-                file_m3u.write(url)
+        url = response.text.replace('https://', 'http://127.0.0.1:3333/?url=https://').replace('.png', '.png&')
+        file_path = path_m3u.replace('\\', '/') + 'redecanais_vip_playlist.m3u8'
+        with open(file_path, "w", encoding="utf-8") as file_m3u:
+            file_m3u.write(url)
         return file_path

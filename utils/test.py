@@ -7,7 +7,7 @@ from lib import rcresolver
 # Pass url film or channel of the addon scraper to <rcresolver.Resolver()> class
 
 result_dict_film = rcresolver.resolve(
-    'https://redecanais.cloud/velozes-furiosos-9-dublado-2021-1080p_5051fb7cf.html'
+    'https://redecanais.re/velozes-furiosos-9-dublado-2021-1080p_5051fb7cf.html'
 )
 
 print(json.dumps(result_dict_film, indent=4))
