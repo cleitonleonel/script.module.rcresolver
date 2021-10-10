@@ -9,7 +9,7 @@ from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 from wsgiref.simple_server import WSGIServer, WSGIRequestHandler
 
-URL_SERVER_FILMS = 'https://redecanais.cloud'
+URL_SERVER_FILMS = 'https://redecanais.wf'
 URL_SERVER_TV = 'https://redecanaistv.net/'
 
 
